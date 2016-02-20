@@ -162,7 +162,7 @@ public class AdvancedSslSocketFactory implements SecureProtocolSocketFactory {
             final HttpConnectionParams params) throws IOException,
             UnknownHostException, ConnectTimeoutException {
         Log_OC.d(TAG, "Creating SSL Socket with remote " + host + ":" + port + ", local " + localAddress + ":" + 
-            localPort + ", params: " + params);
+        localPort + ", params: " + params);
         if (params == null) {
             throw new IllegalArgumentException("Parameters may not be null");
         } 
@@ -172,16 +172,31 @@ public class AdvancedSslSocketFactory implements SecureProtocolSocketFactory {
         
         SocketFactory socketfactory = mSslContext.getSocketFactory();
         Log_OC.d(TAG, " ... with connection timeout " + timeout + " and socket timeout " + params.getSoTimeout());
-        Socket socket = socketfactory.createSocket();
-        enableSecureProtocols(socket);
+        final InetAddress[] allByName = InetAddress.getAllByName(host);
         SocketAddress localaddr = new InetSocketAddress(localAddress, localPort);
-        SocketAddress remoteaddr = new InetSocketAddress(host, port);
-        socket.setSoTimeout(params.getSoTimeout());
-        socket.bind(localaddr);
-        ServerNameIndicator.setServerNameIndication(host, (SSLSocket)socket);
-        socket.connect(remoteaddr, timeout);
-        verifyPeerIdentity(host, port, socket);
-        return socket;
+
+        for (int i = 0; i < allByName.length; i++) {
+            SocketAddress remoteaddr = new InetSocketAddress(allByName[i], port);
+            Log_OC.d(TAG, "trying to connect to " + remoteaddr);
+            Socket socket = socketfactory.createSocket();
+            enableSecureProtocols(socket);
+            socket.bind(localaddr);
+            ServerNameIndicator.setServerNameIndication(host, (SSLSocket) socket);
+            socket.setSoTimeout(params.getSoTimeout());
+            try {
+                socket.connect(remoteaddr, timeout);
+                verifyPeerIdentity(host, port, socket);
+                return socket;
+            } catch (ConnectException connectException) {
+                Log_OC.d(TAG, connectException + " trying to connect to " + remoteaddr);
+                if (i == allByName.length - 1) {
+                    Log_OC.d(TAG, "no more tries to connect to " + remoteaddr);
+                    throw connectException;
+                }
+            }
+        }
+
+        return null;
     }
 
 	/**
